@@ -16,21 +16,47 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    Local: {
+      url: "http://127.0.0.1:8545/",
+      accounts: [
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      ],
+      // gas: 30000000,
+      // gasPrice: 50000000,
+    },
     MerlinTestnet: {
       url: "https://testnet-rpc.merlinchain.io",
-      accounts: [process.env.TEST_SECRET_KEY || ""],
+      accounts: [
+        process.env.TEST_SECRET_KEY ||
+          "a58aadef3c5321f9601f2aa3c7e8cfc451fe09ca635c913d21b829f6614585f2",
+      ],
       // gas: 30000000,
       // gasPrice: 50000000,
     },
     MerlinMainnet: {
       url: "https://rpc.merlinchain.io",
-      accounts: [process.env.SECRET_KEY || ""],
-      gas: 30000000,
+      accounts: [
+        process.env.SECRET_KEY ||
+          "a58aadef3c5321f9601f2aa3c7e8cfc451fe09ca635c913d21b829f6614585f2",
+      ],
+      // gas: 30000000,
       gasPrice: 50000000,
     },
     BitlayerTestnet: {
       url: "https://testnet-rpc.bitlayer.org",
-      accounts: [process.env.TEST_SECRET_KEY || ""],
+      accounts: [
+        process.env.TEST_SECRET_KEY ||
+          "a58aadef3c5321f9601f2aa3c7e8cfc451fe09ca635c913d21b829f6614585f2",
+      ],
+      // gas: 30000000,
+      // gasPrice: 50000000,
+    },
+    MantleSepolia: {
+      url: "https://rpc.sepolia.mantle.xyz",
+      accounts: [
+        process.env.TEST_SECRET_KEY ||
+          "a58aadef3c5321f9601f2aa3c7e8cfc451fe09ca635c913d21b829f6614585f2",
+      ],
       // gas: 30000000,
       // gasPrice: 50000000,
     },
@@ -54,8 +80,19 @@ const config: HardhatUserConfig = {
       MerlinMainnet: "abc",
       BitlayerTestnet: "abc",
       BitlayerMainnet: "abc",
+      MantleSepolia: "NM3TIFEK4CNK6B2F26SJEK8PYTIDHQ5VXF",
     },
     customChains: [
+      {
+        network: "MantleSepolia",
+        chainId: 5003,
+        urls: {
+          // apiURL: "https://explorer.sepolia.mantle.xyz/api",
+          // browserURL: "https://explorer.sepolia.mantle.xyz/",
+          apiURL: "https://api-sepolia.mantlescan.xyz/api",
+          browserURL: "https://sepolia.mantlescan.xyz/",
+        },
+      },
       {
         network: "MerlinTestnet",
         chainId: 686868,
