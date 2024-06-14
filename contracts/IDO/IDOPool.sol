@@ -27,14 +27,18 @@ contract IDOPool is Ownable, Pausable {
     //vote claim amout
     uint256 public voteClaimAmount;
 
-    // IDO Token A 项目代币
+    // IDO Token A 目标代币 USDT or MNT
     address public idoTokenA;
-    // IDO Token B 目标代币
+    // IDO Token B 项目代币 EVO-Token
     address public idoTokenB;
+    // TokenA decimals
+    uint256 public idoTokenADecimals;
+    // TokenB decimals
+    uint256 public idoTokenBDecimals;
 
     // IDO Token A 目标代币数量 比如USDT
     uint256 public idoTokenAAmount;
-    // IDO Token B 目标代币数量 比如EVO-Token
+    // IDO Token B 项目代币数量 比如EVO-Token
     uint256 public idoTokenBAmount;
     // 每个A代币对应的B代币数量 1USDT = xxx EVO
     uint256 public idoTokenAPrice;
@@ -67,6 +71,11 @@ contract IDOPool is Ownable, Pausable {
     event Claimed(address indexed user, uint256 amount);
     event Withdraw(address token, uint256 amount);
 
+    modifier onlyValidAddress(address addr) {
+        require(addr != address(0), "Illegal address");
+        _;
+    }
+
     /*
      * @dev Initializes the contract.
      * @param _voteToken The token to vote with.
@@ -95,8 +104,9 @@ contract IDOPool is Ownable, Pausable {
         uint256 _idoTokenBAmount,
         uint256 _idoStartTime,
         uint256 _idoEndTime,
-        uint256 _idoMaxAmountPerAddress
-    ) Ownable(msg.sender) {
+        uint256 _idoMaxAmountPerAddress,
+        address _owner
+    ) Ownable(_owner) {
         require(
             _idoStartTime < _idoEndTime + 1 days,
             "Start time must be before end time + 1 days"
@@ -132,15 +142,19 @@ contract IDOPool is Ownable, Pausable {
         idoStartTime = _idoStartTime;
         idoEndTime = _idoEndTime;
         idoMaxAmountPerAddress = _idoMaxAmountPerAddress;
-
+        idoTokenBDecimals = IERC20Metadata(_idoTokenB).decimals();
         totalTokenBAmount = idoTokenBAmount + perVoteReward * voteMaxAmount;
+        if (idoTokenA == address(0)) {
+            idoTokenADecimals = 18;
+        } else {
+            idoTokenADecimals = IERC20Metadata(_idoTokenA).decimals();
+        }
 
-        if (IERC20Metadata(_idoTokenA).decimals() == 0) {
+        if (idoTokenADecimals == 0) {
             idoTokenAPrice = _idoTokenBAmount / _idoTokenAAmount;
         } else {
             idoTokenAPrice =
-                ((10 ** IERC20Metadata(_idoTokenA).decimals()) *
-                    _idoTokenBAmount) /
+                ((10 ** idoTokenADecimals) * _idoTokenBAmount) /
                 _idoTokenBAmount;
         }
     }
@@ -151,10 +165,17 @@ contract IDOPool is Ownable, Pausable {
      * 合约中token B数量 >= idoTokenBAmount + perVoteReward * voteMaxAmount
      */
     function vote() public whenNotPaused {
-        require(
-            IERC20(voteToken).balanceOf(_msgSender()) >= voteTokenLimit,
-            "Insufficient vote token"
-        );
+        if (voteToken == address(0)) {
+            require(
+                msg.sender.balance >= voteTokenLimit,
+                "Insufficient ETH balance to vote"
+            );
+        } else {
+            require(
+                IERC20(voteToken).balanceOf(_msgSender()) >= voteTokenLimit,
+                "Insufficient vote token"
+            );
+        }
         require(
             IERC20(idoTokenB).balanceOf(address(this)) >= totalTokenBAmount,
             "Token B amount is not enough"
@@ -168,13 +189,27 @@ contract IDOPool is Ownable, Pausable {
     }
 
     /**
+     * @dev Claims the vote reaward.
+     * 用户投票后，结束时间后可领取奖励
+     */
+    function claimVote() public whenNotPaused {
+        require(voteAmount == voteMaxAmount, "Vote amount is not full");
+        require(voteUser[_msgSender()] == true, "User didn't vote");
+        IERC20(idoTokenB).safeTransfer(_msgSender(), perVoteReward);
+        voteClaimed[_msgSender()] = true;
+        voteUser[_msgSender()] = false;
+        voteClaimAmount += perVoteReward;
+        emit VoteClaimed(_msgSender(), perVoteReward);
+    }
+
+    /**
      * @dev Deposit for the IDO.
      * voteAmount = voteMaxAmount时，用户可参与IDO
      * 合约中token B数量 >= idoTokenBAmount + perVoteReward * voteMaxAmount
      * idoAmount 必须小于 idoTokenAAmount
      * 时间在IDO开始时间和结束时间之间
      */
-    function deposit(uint256 amount) public whenNotPaused {
+    function _deposit(uint256 amount) public whenNotPaused {
         require(voteAmount == voteMaxAmount, "Vote amount is not full");
         require(
             IERC20(idoTokenA).balanceOf(_msgSender()) >= amount,
@@ -201,9 +236,18 @@ contract IDOPool is Ownable, Pausable {
         idoAddressAmount[_msgSender()] += amount;
         idoAmount += amount;
 
-        IERC20(idoTokenA).safeTransferFrom(_msgSender(), address(this), amount);
-
         emit Deposit(_msgSender(), amount);
+    }
+
+    function DepositERC20(uint256 amount) public whenNotPaused {
+        require(idoTokenA != address(0), "Cannot deposit with MNT");
+        _deposit(amount);
+        IERC20(idoTokenA).safeTransferFrom(_msgSender(), address(this), amount);
+    }
+
+    function DepositMNT() public payable whenNotPaused {
+        require(idoTokenA == address(0), "Cannot deposit with erc20 token");
+        _deposit(msg.value);
     }
 
     /**
@@ -227,32 +271,25 @@ contract IDOPool is Ownable, Pausable {
     }
 
     /**
-     * @dev Claims the vote.
-     * 用户投票后，结束时间后可领取奖励
-     */
-    function claimVote() public whenNotPaused {
-        require(voteAmount == voteMaxAmount, "Vote amount is not full");
-        require(voteUser[_msgSender()] == true, "User didn't vote");
-        IERC20(idoTokenB).safeTransfer(_msgSender(), perVoteReward);
-        voteClaimed[_msgSender()] = true;
-        voteUser[_msgSender()] = false;
-        voteClaimAmount += perVoteReward;
-        emit VoteClaimed(_msgSender(), perVoteReward);
-    }
-
-    /**
      * @dev Withdraws the token.
-     * 合约中的token A可提取
+     *
      */
     function withdrawTokenA() public onlyOwner {
-        uint256 amount = IERC20(idoTokenA).balanceOf(address(this));
-        IERC20(idoTokenA).safeTransfer(owner(), amount);
-        emit Withdraw(idoTokenA, amount);
+        if (idoTokenA == address(0)) {
+            uint256 amount = address(this).balance;
+            (bool success, ) = payable(_msgSender()).call{value: amount}("");
+            require(success, "Transfer failed");
+            emit Withdraw(idoTokenA, amount);
+        } else {
+            uint256 amount = IERC20(idoTokenA).balanceOf(address(this));
+            IERC20(idoTokenA).safeTransfer(_msgSender(), amount);
+            emit Withdraw(idoTokenA, amount);
+        }
     }
 
     /**
      * @dev Withdraws the token.
-     * 如果A是原生代币 合约中的token A可提取
+     *
      */
     function withdrawTokenB() public onlyOwner {
         uint256 amount = IERC20(idoTokenB).balanceOf(address(this));
@@ -265,6 +302,20 @@ contract IDOPool is Ownable, Pausable {
             IERC20(idoTokenB).safeTransfer(owner(), availableAmount);
             emit Withdraw(idoTokenB, amount);
         }
+    }
+
+    /**
+     * @dev Withdraws the token.
+     *
+     */
+    function withdrawOtherToken(address token) public onlyOwner {
+        require(
+            token != idoTokenA && token != idoTokenB,
+            "Cannot withdraw ido token"
+        );
+        uint256 amount = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(owner(), amount);
+        emit Withdraw(token, amount);
     }
 
     /**
